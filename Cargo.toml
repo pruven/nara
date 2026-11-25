@@ -6,11 +6,12 @@ edition = "2024"
 [dependencies]
 dirs = "6"
 tempfile = "3"
-rune = { git = "https://github.com/anomalyco/rune", rev = "dece2aff3a254ffd6f6a0a49baa82b75664b3190", default-features = false, features = ["accessibility"] }
+rune = { git = "https://github.com/anomalyco/rune", rev = "dece2aff3a254ffd6f6a0a49baa82b75664b3190", default-features = false, features = ["accessibility", "native-file-dialog"] }
 ureq = "3.5"
 url = "2.5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+gio = "0.22"
 gpui = { package = "gpui-unofficial", version = "=1.29.3", default-features = false, features = ["wayland", "x11"] }
 gpui_platform = { package = "gpui-platform-gpui-unofficial", version = "=1.29.3", default-features = false, features = ["wayland", "x11", "font-kit"] }
 

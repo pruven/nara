@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use rune::{AppSpec, Cx, El, col, color::Color, el, text, tok::type_};
+use rune::{AppSpec, Cx, El, FileDialogOptions, col, color::Color, el, text, tok::type_};
 
 use crate::{
     BACKGROUND, BORDER, FOREGROUND, MUTED, SURFACE,
@@ -16,12 +16,21 @@ struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            browsers: Browser::ALL
-                .into_iter()
-                .filter(|browser| browser.installed())
-                .collect(),
+            browsers: browser::available(),
             selected: browser::preferred(),
             message: String::new(),
+        }
+    }
+}
+
+impl Settings {
+    fn select(&mut self, browser: Browser) {
+        match browser::save(&browser) {
+            Ok(()) => {
+                self.message = format!("Links will open in {}.", browser.label());
+                self.selected = Some(browser);
+            }
+            Err(error) => self.message = format!("Could not save browser preference. {error}"),
         }
     }
 }
@@ -51,24 +60,19 @@ fn button(label: &str, key: &str) -> El {
 
 fn view(state: &Settings, _: &mut Cx<Settings>) -> El {
     let mut browsers = col().w_full().gap(6.0);
-    for browser in state.browsers.iter().copied() {
-        let label = if state.selected == Some(browser) {
+    for browser in state.browsers.iter().cloned() {
+        let label = if state.selected.as_ref() == Some(&browser) {
             format!("{} · Selected", browser.label())
         } else {
             browser.label().to_owned()
         };
-        browsers = browsers.child(button(&label, browser.label()).on_press(
-            move |state: &mut Settings| match browser::save(browser) {
-                Ok(()) => {
-                    state.selected = Some(browser);
-                    state.message = format!("Links will open in {}.", browser.label());
-                }
-                Err(error) => state.message = format!("Could not save browser preference. {error}"),
-            },
-        ));
+        browsers = browsers.child(
+            button(&label, browser.label())
+                .on_press(move |state: &mut Settings| state.select(browser.clone())),
+        );
     }
     if state.browsers.is_empty() {
-        browsers = browsers.child(text("No supported browser found.").color(color(MUTED)));
+        browsers = browsers.child(text("No browsers detected.").color(color(MUTED)));
     }
     let mut content = col()
         .w_full()
@@ -86,7 +90,40 @@ fn view(state: &Settings, _: &mut Cx<Settings>) -> El {
                 .font(type_::BODY)
                 .color(color(MUTED)),
         )
-        .child(browsers);
+        .child(
+            browsers
+                .scroll(rune::ScrollSpec {
+                    stick_bottom: false,
+                })
+                .shrink()
+                .min_h(0.0),
+        )
+        .child(
+            button(
+                &match &state.selected {
+                    Some(browser @ Browser::Custom(_)) => {
+                        format!("{} · Selected (browse…)", browser.label())
+                    }
+                    _ => "Choose another browser…".to_owned(),
+                },
+                "custom-browser",
+            )
+            .on_press_tx(|_: &mut Settings, tx| {
+                let options = FileDialogOptions {
+                    title: "Choose a browser executable".to_owned(),
+                    ..Default::default()
+                };
+                #[cfg(windows)]
+                let options = options.filter("Browser executable", &["exe"]);
+                tx.open_file(options, |state: &mut Settings, result, _| match result {
+                    Ok(Some(path)) => state.select(Browser::Custom(path)),
+                    Ok(None) => {}
+                    Err(error) => {
+                        state.message = format!("Could not open the file chooser. {error}")
+                    }
+                });
+            }),
+        );
 
     #[cfg(windows)]
     let default_button = "Open Windows Default Apps";
@@ -95,7 +132,7 @@ fn view(state: &Settings, _: &mut Cx<Settings>) -> El {
 
     content = content.child(button(default_button, "default-handler").on_press(
         |state: &mut Settings| {
-            if !state.selected.is_some_and(|browser| browser.installed()) {
+            if !state.selected.as_ref().is_some_and(Browser::installed) {
                 state.message = "Choose a browser above first.".to_owned();
                 return;
             }
@@ -136,13 +173,10 @@ fn set_default() -> std::io::Result<&'static str> {
 }
 
 pub fn run() {
-    let installed = Browser::ALL
-        .into_iter()
-        .filter(|browser| browser.installed())
-        .count();
+    let installed = browser::available().len().clamp(1, 7);
     rune::run(AppSpec::new(
         "Nara Settings",
-        (440.0, 228.0 + 44.0 * installed.max(1) as f32),
+        (440.0, 280.0 + 44.0 * installed as f32),
         Settings::default,
         view,
     ));

@@ -15,9 +15,9 @@ cargo run --locked -- --settings
 ```
 
 Linux builds use Wayland or X11 and require the corresponding native libraries
-for GPUI, a GPU driver with Vulkan support, and a working Fontconfig setup. On
-Windows, use Rust's MSVC toolchain with Visual Studio C++ Build Tools and the
-Windows SDK.
+for GPUI, GLib development files for browser discovery, a GPU driver with Vulkan
+support, and a working Fontconfig setup. On Windows, use Rust's MSVC toolchain
+with Visual Studio C++ Build Tools and the Windows SDK.
 
 ## Open links automatically
 
@@ -26,9 +26,13 @@ Windows SDK.
 - **Windows** — Build with `cargo build --locked --release`, then compile
   `packaging/windows/nara.iss` with Inno Setup to register Nara for HTTP and HTTPS.
 
-Open **Nara Settings**, select an installed browser, and use the default handler
-button. On Windows, choose Nara for HTTP and HTTPS in Default Apps. To restore
-the previous behavior, choose your browser again in the system settings.
+Open **Nara Settings** and select a detected browser, or use **Choose another
+browser…** to select the browser executable yourself. Nara saves the choice
+and uses it whenever you click **Open in browser**.
+
+Use the default handler button to begin routing desktop links through Nara.
+On Windows, choose Nara for HTTP and HTTPS in Default Apps. To restore the
+previous behavior, choose your browser again in the system settings.
 
 Links that a browser handles within its own tabs follow that browser's usual
 navigation flow. Nara receives links that applications send to the system
