@@ -6,6 +6,16 @@ open the original link in your chosen browser. GPUI renders the review window,
 and Rune renders browser settings. Both use a charcoal palette inspired by
 [Saiki](https://github.com/pruven/saiki).
 
+## Download
+
+Get the latest x64 packages and SHA-256 checksums from [GitHub Releases](https://github.com/MandavkarPranjal/nara/releases/latest).
+
+- **Linux** — Extract the archive, open a terminal in the extracted folder,
+  and run `./install.sh ./nara`. The binary targets Ubuntu 24.04 or newer,
+  or a distribution with compatible runtime libraries.
+- **Windows** — Run the setup executable to install Nara and register it as a
+  link handler. The portable ZIP can run directly from the extracted folder.
+
 ## Build and try it
 
 ```sh

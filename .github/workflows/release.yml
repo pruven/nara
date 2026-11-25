@@ -1,0 +1,120 @@
+name: Build and release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux x64 archive
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config \
+            libglib2.0-dev libinput-dev libudev-dev libwayland-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libxcb1-dev libfontconfig1-dev libfreetype-dev libssl-dev
+          rustup update stable
+      - name: Test and build
+        run: |
+          cargo test --locked
+          cargo build --release --locked
+      - name: Package and test installation
+        run: |
+          package=nara-linux-x86_64
+          mkdir -p "dist/$package"
+          install -m755 target/release/nara packaging/linux/install.sh "dist/$package/"
+          install -m644 README.md packaging/linux/nara.desktop packaging/linux/nara.svg "dist/$package/"
+          test_home=$(mktemp -d)
+          HOME="$test_home" XDG_DATA_HOME="$test_home/share" "dist/$package/install.sh" "dist/$package/nara"
+          test -x "$test_home/.local/bin/nara"
+          test -f "$test_home/share/applications/nara.desktop"
+          "$test_home/.local/bin/nara" --help
+          tar -C dist -czf "dist/$package.tar.gz" "$package"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: nara-linux-x86_64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  windows:
+    name: Windows x64 installer and ZIP
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Test and build
+        shell: pwsh
+        run: |
+          rustup update stable
+          if ($LASTEXITCODE -ne 0) { throw 'Rust update failed' }
+          cargo test --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+      - name: Package
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $output = (Resolve-Path dist).Path
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (!(Test-Path $iscc)) { $iscc = (Get-Command ISCC.exe -ErrorAction Stop).Source }
+          & $iscc "/O$output" packaging/windows/nara.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+          Compress-Archive -Path target/release/nara.exe, README.md -DestinationPath dist/nara-windows-x86_64.zip
+      - name: Test installation and uninstall
+        shell: pwsh
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'Nara install test'
+          $install = Start-Process dist/nara-windows-x86_64-setup.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$destination`"" -Wait -PassThru
+          if ($install.ExitCode -ne 0 -or !(Test-Path "$destination/nara.exe")) { throw 'Nara was not installed' }
+          $handler = Get-ItemPropertyValue 'HKCU:/Software/Nara/Capabilities/URLAssociations' -Name https
+          if ($handler -ne 'Nara.WebLink') { throw 'HTTPS handler registration is missing' }
+          $uninstall = Start-Process "$destination/unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0 -or (Test-Path "$destination/nara.exe")) { throw 'Uninstall failed' }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: nara-windows-x86_64
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: nara-*
+          merge-multiple: true
+          path: packages
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          test "$GITHUB_REF_NAME" = "v$version"
+          cd packages
+          assets=(nara-linux-x86_64.tar.gz nara-windows-x86_64-setup.exe nara-windows-x86_64.zip)
+          sha256sum "${assets[@]}" > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" SHA256SUMS \
+            --verify-tag --title "Nara $GITHUB_REF_NAME" --generate-notes
