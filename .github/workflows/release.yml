@@ -32,7 +32,7 @@ jobs:
           package=nara-linux-x86_64
           mkdir -p "dist/$package"
           install -m755 target/release/nara packaging/linux/install.sh "dist/$package/"
-          install -m644 README.md packaging/linux/nara.desktop packaging/linux/nara.svg "dist/$package/"
+          install -m644 README.md LICENSE packaging/linux/nara.desktop packaging/linux/nara.svg "dist/$package/"
           test_home=$(mktemp -d)
           HOME="$test_home" XDG_DATA_HOME="$test_home/share" "dist/$package/install.sh" "dist/$package/nara"
           test -x "$test_home/.local/bin/nara"
@@ -73,7 +73,7 @@ jobs:
           if (!(Test-Path $iscc)) { $iscc = (Get-Command ISCC.exe -ErrorAction Stop).Source }
           & $iscc "/O$output" packaging/windows/nara.iss
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
-          Compress-Archive -Path target/release/nara.exe, README.md -DestinationPath dist/nara-windows-x86_64.zip
+          Compress-Archive -Path target/release/nara.exe, README.md, LICENSE -DestinationPath dist/nara-windows-x86_64.zip
       - name: Test installation and uninstall
         shell: pwsh
         run: |

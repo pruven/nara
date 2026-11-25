@@ -1,7 +1,7 @@
 [Setup]
 AppId=Nara.LinkReview
 AppName=Nara
-AppVersion=0.1.0
+AppVersion=0.1.1
 DefaultDirName={localappdata}\Programs\Nara
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -11,6 +11,7 @@ OutputBaseFilename=nara-windows-x86_64-setup
 
 [Files]
 Source: "..\..\target\release\nara.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{userprograms}\Nara"; Filename: "{app}\nara.exe"
