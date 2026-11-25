@@ -10,8 +10,16 @@ permissions:
 
 jobs:
   linux:
-    name: Linux x64 archive
-    runs-on: ubuntu-24.04
+    name: Linux archive (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -25,11 +33,12 @@ jobs:
           rustup update stable
       - name: Test and build
         run: |
-          cargo test --locked
+          cargo test --release --locked
           cargo build --release --locked
       - name: Package and test installation
         run: |
-          package=nara-linux-x86_64
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          package=nara-linux-${{ matrix.arch }}
           mkdir -p "dist/$package"
           install -m755 target/release/nara packaging/linux/install.sh "dist/$package/"
           install -m644 README.md LICENSE packaging/linux/nara.desktop packaging/linux/nara.svg "dist/$package/"
@@ -41,14 +50,24 @@ jobs:
           tar -C dist -czf "dist/$package.tar.gz" "$package"
       - uses: actions/upload-artifact@v6
         with:
-          name: nara-linux-x86_64
+          name: nara-linux-${{ matrix.arch }}
           path: dist/*.tar.gz
           if-no-files-found: error
           compression-level: 0
 
   windows:
-    name: Windows x64 installer and ZIP
-    runs-on: windows-2025
+    name: Windows installer and ZIP (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -58,9 +77,21 @@ jobs:
         run: |
           rustup update stable
           if ($LASTEXITCODE -ne 0) { throw 'Rust update failed' }
-          cargo test --locked
+          rustup target add ${{ matrix.target }}
+          if ($LASTEXITCODE -ne 0) { throw 'Rust target installation failed' }
+          if ('${{ matrix.arch }}' -eq 'arm64') {
+            # Windows on ARM can run the x64 shader compiler from the SDK.
+            $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $env:GPUI_FXC_PATH = Get-ChildItem $sdkBin -Directory -Filter '10.*' |
+              Sort-Object { [version]$_.Name } -Descending |
+              ForEach-Object { Join-Path $_.FullName 'x64/fxc.exe' } |
+              Where-Object { Test-Path $_ -PathType Leaf } |
+              Select-Object -First 1
+            if (!$env:GPUI_FXC_PATH) { throw 'Windows SDK shader compiler not found' }
+          }
+          cargo test --locked --release --target ${{ matrix.target }}
           if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
-          cargo build --release --locked
+          cargo build --release --locked --target ${{ matrix.target }}
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
       - name: Package
         shell: pwsh
@@ -71,14 +102,15 @@ jobs:
           $output = (Resolve-Path dist).Path
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (!(Test-Path $iscc)) { $iscc = (Get-Command ISCC.exe -ErrorAction Stop).Source }
-          & $iscc "/O$output" packaging/windows/nara.iss
+          $binary = (Resolve-Path "target/${{ matrix.target }}/release/nara.exe").Path
+          & $iscc "/O$output" "/DAppArch=${{ matrix.arch }}" "/DAppBinary=$binary" packaging/windows/nara.iss
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
-          Compress-Archive -Path target/release/nara.exe, README.md, LICENSE -DestinationPath dist/nara-windows-x86_64.zip
+          Compress-Archive -Path $binary, README.md, LICENSE -DestinationPath "dist/nara-windows-${{ matrix.arch }}.zip"
       - name: Test installation and uninstall
         shell: pwsh
         run: |
           $destination = Join-Path $env:RUNNER_TEMP 'Nara install test'
-          $install = Start-Process dist/nara-windows-x86_64-setup.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$destination`"" -Wait -PassThru
+          $install = Start-Process "dist/nara-windows-${{ matrix.arch }}-setup.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$destination`"" -Wait -PassThru
           if ($install.ExitCode -ne 0 -or !(Test-Path "$destination/nara.exe")) { throw 'Nara was not installed' }
           $handler = Get-ItemPropertyValue 'HKCU:/Software/Nara/Capabilities/URLAssociations' -Name https
           if ($handler -ne 'Nara.WebLink') { throw 'HTTPS handler registration is missing' }
@@ -86,7 +118,7 @@ jobs:
           if ($uninstall.ExitCode -ne 0 -or (Test-Path "$destination/nara.exe")) { throw 'Uninstall failed' }
       - uses: actions/upload-artifact@v6
         with:
-          name: nara-windows-x86_64
+          name: nara-windows-${{ matrix.arch }}
           path: dist/
           if-no-files-found: error
           compression-level: 0
@@ -114,7 +146,8 @@ jobs:
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           test "$GITHUB_REF_NAME" = "v$version"
           cd packages
-          assets=(nara-linux-x86_64.tar.gz nara-windows-x86_64-setup.exe nara-windows-x86_64.zip)
+          assets=(nara-linux-{x86_64,aarch64}.tar.gz
+            nara-windows-{x86_64,arm64}-setup.exe nara-windows-{x86_64,arm64}.zip)
           sha256sum "${assets[@]}" > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" SHA256SUMS \
             --verify-tag --title "Nara $GITHUB_REF_NAME" --generate-notes

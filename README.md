@@ -8,7 +8,7 @@ and Rune renders browser settings. Both use a charcoal palette inspired by
 
 ## Download
 
-Get the latest x64 packages and SHA-256 checksums from [GitHub Releases](https://github.com/pruven/nara/releases/latest).
+Get the latest x64 and ARM64 packages and SHA-256 checksums from [GitHub Releases](https://github.com/pruven/nara/releases/latest).
 
 - **Linux** — Extract the archive, open a terminal in the extracted folder,
   and run `./install.sh ./nara`. The binary targets Ubuntu 24.04 or newer,

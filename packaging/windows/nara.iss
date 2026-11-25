@@ -1,16 +1,28 @@
+#ifndef AppArch
+  #define AppArch "x86_64"
+#endif
+#ifndef AppBinary
+  #define AppBinary "..\..\target\release\nara.exe"
+#endif
+#if AppArch == "arm64"
+  #define InstallerArchitecture "arm64"
+#else
+  #define InstallerArchitecture "x64compatible"
+#endif
+
 [Setup]
 AppId=Nara.LinkReview
 AppName=Nara
-AppVersion=0.1.2
+AppVersion=0.1.3
 DefaultDirName={localappdata}\Programs\Nara
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#InstallerArchitecture}
+ArchitecturesInstallIn64BitMode={#InstallerArchitecture}
 ChangesAssociations=yes
-OutputBaseFilename=nara-windows-x86_64-setup
+OutputBaseFilename=nara-windows-{#AppArch}-setup
 
 [Files]
-Source: "..\..\target\release\nara.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppBinary}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
