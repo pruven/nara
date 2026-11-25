@@ -156,14 +156,14 @@ fn browser_name(name: &str) -> String {
 }
 
 pub fn available() -> Vec<Browser> {
-    let mut browsers = Vec::new();
+    let mut browsers: Vec<Browser> = Vec::new();
     #[cfg(target_os = "linux")]
     for app in browser_apps() {
         let Some(id) = app.id() else { continue };
         let name = app.display_name().to_string();
         if !browsers
             .iter()
-            .any(|browser: &Browser| browser_name(browser.label()) == browser_name(&name))
+            .any(|browser| browser_name(browser.label()) == browser_name(&name))
         {
             browsers.push(Browser::Desktop {
                 id: id.to_string(),
