@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Nara
+Comment=Review a web link before opening it
+Exec=nara %u
+Icon=nara
+Terminal=false
+Categories=Network;
+MimeType=x-scheme-handler/http;x-scheme-handler/https;
+Actions=Settings;
+
+[Desktop Action Settings]
+Name=Settings
+Exec=nara --settings
