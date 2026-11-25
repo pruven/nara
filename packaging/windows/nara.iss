@@ -7,7 +7,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ChangesAssociations=yes
-OutputBaseFilename=nara-windows-x64-setup
+OutputBaseFilename=nara-windows-x86_64-setup
 
 [Files]
 Source: "..\..\target\release\nara.exe"; DestDir: "{app}"; Flags: ignoreversion
