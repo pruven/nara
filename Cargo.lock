@@ -3444,6 +3444,8 @@ dependencies = [
  "gio",
  "gpui-platform-gpui-unofficial",
  "gpui-unofficial",
+ "hex",
+ "ring",
  "rune",
  "semver",
  "serde",

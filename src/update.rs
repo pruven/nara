@@ -86,17 +86,44 @@ pub fn check() -> Result<Option<Update>> {
     }))
 }
 
+fn verify_checksums(
+    public_key: &[u8],
+    version: &Version,
+    checksums: &[u8],
+    signature: &[u8],
+) -> Result<()> {
+    let mut signed = format!("nara-release-v{version}\n").into_bytes();
+    signed.extend_from_slice(checksums);
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public_key)
+        .verify(&signed, signature)
+        .map_err(|_| "The update checksum signature is invalid".into())
+}
+
 impl Update {
     pub fn download(&self, destination: &Path) -> Result<()> {
         let base = format!("{REPOSITORY}/releases/download/v{}", self.version);
-        let checksums = metadata_agent()
+        let public_key = option_env!("NARA_UPDATE_PUBLIC_KEY")
+            .filter(|key| !key.is_empty())
+            .ok_or("This build has no update signing key")?;
+        let mut key = [0; 32];
+        hex::decode_to_slice(public_key, &mut key)?;
+        let agent = metadata_agent();
+        let checksums = agent
             .get(format!("{base}/SHA256SUMS"))
             .call()?
             .body_mut()
             .with_config()
             .limit(64 * 1024)
-            .read_to_string()?;
-        let expected = checksums
+            .read_to_vec()?;
+        let signature = agent
+            .get(format!("{base}/SHA256SUMS.sig"))
+            .call()?
+            .body_mut()
+            .with_config()
+            .limit(64)
+            .read_to_vec()?;
+        verify_checksums(&key, &self.version, &checksums, &signature)?;
+        let expected = std::str::from_utf8(&checksums)?
             .lines()
             .filter_map(|line| line.split_once("  "))
             .find_map(|(hash, filename)| (filename == self.filename).then_some(hash))
@@ -143,5 +170,36 @@ impl Update {
         file.as_file().sync_all()?;
         file.persist(destination)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ring::{
+        rand::SystemRandom,
+        signature::{Ed25519KeyPair, KeyPair},
+    };
+
+    #[test]
+    fn checksum_signature_binds_manifest_and_release_version() {
+        let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
+        let key = Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap();
+        let public_key = key.public_key().as_ref();
+        let checksums = b"example checksums\n";
+        let signature = key.sign(b"nara-release-v1.2.3\nexample checksums\n");
+        let version = Version::new(1, 2, 3);
+
+        assert!(verify_checksums(public_key, &version, checksums, signature.as_ref()).is_ok());
+        assert!(verify_checksums(public_key, &version, b"altered\n", signature.as_ref()).is_err());
+        assert!(
+            verify_checksums(
+                public_key,
+                &Version::new(1, 2, 4),
+                checksums,
+                signature.as_ref()
+            )
+            .is_err()
+        );
     }
 }
