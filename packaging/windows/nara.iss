@@ -13,7 +13,7 @@
 [Setup]
 AppId=Nara.LinkReview
 AppName=Nara
-AppVersion=0.1.3
+AppVersion=0.1.4
 DefaultDirName={localappdata}\Programs\Nara
 PrivilegesRequired=lowest
 ArchitecturesAllowed={#InstallerArchitecture}
