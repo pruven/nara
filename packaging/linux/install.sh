@@ -15,7 +15,7 @@ case "$desktop_id" in
   *) printf '%s\n' 'The binary did not report a valid desktop ID.' >&2; exit 1 ;;
 esac
 case "$binary_name" in
-  ''|*[!a-zA-Z0-9_.-]*) printf '%s\n' 'Invalid desktop ID.' >&2; exit 1 ;;
+  ''|.|..|*[!a-zA-Z0-9_.-]*) printf '%s\n' 'Invalid desktop ID.' >&2; exit 1 ;;
 esac
 app_name=Nara
 if [ "$binary_name" = nara-dev ]; then
