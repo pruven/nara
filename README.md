@@ -79,3 +79,20 @@ and **Open in browser** use the URL currently shown in the popup.
 | Enter | Open in the selected browser |
 | Ctrl+, | Browser settings |
 | Esc | Close the review window |
+
+## Release signing
+
+Tagged releases require an Ed25519 key. Generate it in a secure location and keep
+the PEM private. Store its contents as the GitHub Actions secret
+`NARA_UPDATE_PRIVATE_KEY`. Store the raw public key as 64 lowercase hex digits
+in the Actions variable `NARA_UPDATE_PUBLIC_KEY`.
+
+```sh
+openssl genpkey -algorithm ED25519 -out nara-update-key.pem
+openssl pkey -in nara-update-key.pem -pubout -outform DER |
+  tail -c 32 | od -An -v -tx1 | tr -d ' \n'
+```
+
+The release builds embed the public key. The updater requires a signed checksum
+manifest for the target release before downloading its package. Local builds
+need the same public key in their build environment to download updates.

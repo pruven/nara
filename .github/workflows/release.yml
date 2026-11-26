@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  NARA_UPDATE_PUBLIC_KEY: ${{ vars.NARA_UPDATE_PUBLIC_KEY }}
+
 jobs:
   linux:
     name: Linux archive (${{ matrix.arch }})
@@ -138,6 +141,27 @@ jobs:
           pattern: nara-*
           merge-multiple: true
           path: packages
+      - name: Sign release checksums
+        working-directory: packages
+        env:
+          NARA_UPDATE_PRIVATE_KEY: ${{ secrets.NARA_UPDATE_PRIVATE_KEY }}
+        run: |
+          test -n "$NARA_UPDATE_PRIVATE_KEY" || { echo "Missing NARA_UPDATE_PRIVATE_KEY"; exit 1; }
+          umask 077
+          signing_dir=$(mktemp -d)
+          trap 'rm -rf "$signing_dir"' EXIT
+          printf '%s\n' "$NARA_UPDATE_PRIVATE_KEY" > "$signing_dir/key.pem"
+          public_key=$(openssl pkey -in "$signing_dir/key.pem" -pubout -outform DER | od -An -v -tx1 | tr -d ' \n')
+          test "$public_key" = "302a300506032b6570032100$NARA_UPDATE_PUBLIC_KEY" || {
+            echo "Signing key does not match NARA_UPDATE_PUBLIC_KEY"
+            exit 1
+          }
+          assets=(nara-linux-{x86_64,aarch64}.tar.gz
+            nara-windows-{x86_64,arm64}-setup.exe nara-windows-{x86_64,arm64}.zip)
+          sha256sum "${assets[@]}" > SHA256SUMS
+          { printf 'nara-release-%s\n' "$GITHUB_REF_NAME"; cat SHA256SUMS; } > "$signing_dir/manifest"
+          openssl pkeyutl -sign -rawin -inkey "$signing_dir/key.pem" \
+            -in "$signing_dir/manifest" -out SHA256SUMS.sig
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,6 +172,5 @@ jobs:
           cd packages
           assets=(nara-linux-{x86_64,aarch64}.tar.gz
             nara-windows-{x86_64,arm64}-setup.exe nara-windows-{x86_64,arm64}.zip)
-          sha256sum "${assets[@]}" > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" "${assets[@]}" SHA256SUMS \
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" SHA256SUMS SHA256SUMS.sig \
             --verify-tag --title "Nara $GITHUB_REF_NAME" --generate-notes
