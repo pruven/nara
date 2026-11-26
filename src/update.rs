@@ -105,6 +105,8 @@ impl Update {
         let timeout = Some(Duration::from_secs(30));
         let package_agent: ureq::Agent = ureq::Agent::config_builder()
             .https_only(true)
+            // A 256 MiB package takes about 44 minutes at 100 KiB/s.
+            .timeout_global(Some(Duration::from_secs(45 * 60)))
             .timeout_resolve(timeout)
             .timeout_connect(timeout)
             .timeout_recv_response(timeout)
