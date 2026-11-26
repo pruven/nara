@@ -19,12 +19,12 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-24.04
+            runner: blacksmith-4vcpu-ubuntu-2404
           - arch: aarch64
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: useblacksmith/checkout@v1
         with:
           persist-credentials: false
       - name: Install build dependencies
@@ -65,10 +65,10 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: windows-2025
+            runner: blacksmith-4vcpu-windows-2025
             target: x86_64-pc-windows-msvc
           - arch: arm64
-            runner: windows-11-arm
+            runner: blacksmith-4vcpu-windows-2025
             target: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     steps:
@@ -129,11 +129,11 @@ jobs:
   publish:
     if: github.ref_type == 'tag'
     needs: [linux, windows]
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: useblacksmith/checkout@v1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v7
