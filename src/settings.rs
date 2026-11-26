@@ -26,11 +26,12 @@ struct Settings {
     handle: Option<AppHandle<Self>>,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
+impl Settings {
+    fn new(browsers: Vec<Browser>) -> Self {
+        let selected = browser::preferred_from(&browsers);
         Self {
-            browsers: browser::available(),
-            selected: browser::preferred(),
+            browsers,
+            selected,
             message: String::new(),
             #[cfg(target_os = "linux")]
             default_handler: is_default_handler(),
@@ -40,9 +41,7 @@ impl Default for Settings {
             handle: None,
         }
     }
-}
 
-impl Settings {
     fn update_in_background(
         &mut self,
         message: &str,
@@ -431,13 +430,15 @@ fn with_association_rollback(
 }
 
 pub fn run() {
-    let installed = browser::available().len().clamp(1, 7);
+    let browsers = browser::available();
+    let installed = browsers.len().clamp(1, 7);
     let app = rune::App::new(AppSpec::new(
         "Nara Settings",
         (440.0, 470.0 + 44.0 * installed as f32),
-        Settings::default,
+        || Settings::new(browser::available()),
         view,
-    ));
+    ))
+    .init(move || Settings::new(browsers));
     let handle = app.handle();
     let state_handle = handle.clone();
     handle.update(move |state, _| state.handle = Some(state_handle));

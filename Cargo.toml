@@ -28,3 +28,7 @@ gpui_platform = { package = "gpui-platform-gpui-unofficial", version = "=1.29.3"
 
 [profile.dev]
 debug = 0
+
+# GPUI validates and translates shaders before the first frame on Linux.
+[profile.dev.package.naga]
+opt-level = 2
