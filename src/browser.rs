@@ -140,11 +140,7 @@ fn browser_apps() -> impl Iterator<Item = gio::AppInfo> {
             app.supports_uris()
                 && app.should_show()
                 && app.id().is_some_and(|id| {
-                    id != crate::DESKTOP_ID
-                        && !matches!(
-                            id.as_str(),
-                            "nara.desktop" | "nara-dev.desktop" | "omarchy-browser.desktop"
-                        )
+                    !matches!(id.as_str(), "nara.desktop" | "omarchy-browser.desktop")
                 })
         })
 }

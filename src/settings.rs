@@ -1,8 +1,4 @@
-#[cfg(windows)]
 use std::process::Command;
-
-#[cfg(target_os = "linux")]
-use gio::prelude::*;
 
 use rune::{
     AppHandle, AppSpec, Cx, El, FileDialogOptions, col, color::Color, el, text, tok::type_,
@@ -18,8 +14,6 @@ struct Settings {
     browsers: Vec<Browser>,
     selected: Option<Browser>,
     message: String,
-    #[cfg(target_os = "linux")]
-    default_handler: bool,
     update: Option<Update>,
     update_message: String,
     updating: bool,
@@ -32,8 +26,6 @@ impl Default for Settings {
             browsers: browser::available(),
             selected: browser::preferred(),
             message: String::new(),
-            #[cfg(target_os = "linux")]
-            default_handler: is_default_handler(),
             update: None,
             update_message: format!("Nara {}", env!("CARGO_PKG_VERSION")),
             updating: false,
@@ -117,53 +109,16 @@ fn view(state: &Settings, _: &mut Cx<Settings>) -> El {
     if state.browsers.is_empty() {
         browsers = browsers.child(text("No browsers detected.").color(color(MUTED)));
     }
-    #[cfg(windows)]
-    let default_button = "Set Nara as default link opener…";
-    #[cfg(target_os = "linux")]
-    let default_button = if state.default_handler {
-        "Nara is the default link opener"
-    } else {
-        "Set Nara as default link opener"
-    };
-
-    let content = col()
+    let mut content = col()
         .w_full()
         .h_full()
         .padding(24.0)
         .gap(14.0)
         .fill(color(BACKGROUND))
         .child(
-            text("Nara settings")
+            text("Browser settings")
                 .font(type_::TITLE)
                 .color(color(FOREGROUND)),
-        )
-        .child(
-            text("Open web links from other apps in Nara before your browser.")
-                .font(type_::BODY)
-                .color(color(MUTED))
-                .wrap(),
-        )
-        .child(
-            button(default_button, "default-handler").on_press(|state: &mut Settings| {
-                if !state.selected.as_ref().is_some_and(Browser::installed) {
-                    state.message = "Choose a browser below first.".to_owned();
-                    return;
-                }
-                state.message = match set_default() {
-                    Ok(message) => message.to_owned(),
-                    Err(error) => format!("Could not set up the link handler. {error}"),
-                };
-                #[cfg(target_os = "linux")]
-                {
-                    state.default_handler = is_default_handler();
-                }
-            }),
-        )
-        .child(
-            text(state.message.clone())
-                .font(type_::BODY)
-                .color(color(MUTED))
-                .wrap(),
         )
         .child(
             text("Choose where Nara opens reviewed links.")
@@ -205,6 +160,29 @@ fn view(state: &Settings, _: &mut Cx<Settings>) -> El {
             }),
         );
 
+    #[cfg(windows)]
+    let default_button = "Open Windows Default Apps";
+    #[cfg(target_os = "linux")]
+    let default_button = "Set Nara as default link handler";
+
+    content = content.child(button(default_button, "default-handler").on_press(
+        |state: &mut Settings| {
+            if !state.selected.as_ref().is_some_and(Browser::installed) {
+                state.message = "Choose a browser above first.".to_owned();
+                return;
+            }
+            state.message = match set_default() {
+                Ok(message) => message.to_owned(),
+                Err(error) => format!("Could not set up the link handler. {error}"),
+            };
+        },
+    ));
+    content = content.child(
+        text(state.message.clone())
+            .font(type_::BODY)
+            .color(color(MUTED))
+            .wrap(),
+    );
     let mut updates = col().w_full().gap(8.0);
     if !state.updating {
         updates = updates.child(button("Check for updates", "check-update").on_press(
@@ -284,42 +262,23 @@ fn set_default() -> std::io::Result<&'static str> {
 }
 
 #[cfg(target_os = "linux")]
-fn is_default_handler() -> bool {
-    ["http", "https"].into_iter().all(|scheme| {
-        gio::AppInfo::default_for_uri_scheme(scheme)
-            .and_then(|app| app.id())
-            .is_some_and(|id| id == crate::DESKTOP_ID)
-    })
-}
-
-#[cfg(target_os = "linux")]
 fn set_default() -> std::io::Result<&'static str> {
-    let app = gio::AppInfo::all()
-        .into_iter()
-        .find(|app| app.id().is_some_and(|id| id == crate::DESKTOP_ID))
-        .ok_or_else(|| {
-            std::io::Error::other(format!("Install {} first and retry.", crate::DESKTOP_ID))
-        })?;
-    // Set both schemes explicitly: desktops can have different HTTP and HTTPS handlers.
-    for scheme in ["http", "https"] {
-        app.set_as_default_for_type(&format!("x-scheme-handler/{scheme}"))
-            .map_err(|error| {
-                std::io::Error::other(format!("Could not assign {scheme} links to Nara. {error}"))
-            })?;
-    }
-    if !is_default_handler() {
+    let status = Command::new("xdg-settings")
+        .args(["set", "default-web-browser", "nara.desktop"])
+        .status()?;
+    if !status.success() {
         return Err(std::io::Error::other(
-            "The desktop did not apply both link associations. Check your system's default apps.",
+            "Install nara.desktop first and retry.",
         ));
     }
-    Ok("Nara now opens HTTP and HTTPS links instead of your previous default browser.")
+    Ok("Nara is now the default web browser for this desktop.")
 }
 
 pub fn run() {
     let installed = browser::available().len().clamp(1, 7);
     let app = rune::App::new(AppSpec::new(
         "Nara Settings",
-        (440.0, 470.0 + 44.0 * installed as f32),
+        (440.0, 410.0 + 44.0 * installed as f32),
         Settings::default,
         view,
     ));
@@ -327,55 +286,4 @@ pub fn run() {
     let state_handle = handle.clone();
     handle.update(move |state, _| state.handle = Some(state_handle));
     app.run();
-}
-
-#[cfg(all(test, target_os = "linux"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_link_associations() {
-        // GIO caches desktop state. Run in a fresh process with isolated XDG folders
-        // so this test never changes the user's actual default applications.
-        if std::env::var_os("NARA_TEST_DEFAULT_HANDLER").is_none() {
-            let root = tempfile::tempdir().unwrap();
-            let status = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "settings::tests::default_link_associations"])
-                .env("NARA_TEST_DEFAULT_HANDLER", "1")
-                .env("XDG_CONFIG_HOME", root.path().join("config"))
-                .env("XDG_CONFIG_DIRS", root.path().join("config-dirs"))
-                .env("XDG_DATA_HOME", root.path().join("data"))
-                .env("XDG_DATA_DIRS", root.path().join("data-dirs"))
-                .env("XDG_CURRENT_DESKTOP", "")
-                .status()
-                .unwrap();
-            assert!(status.success());
-            return;
-        }
-
-        let applications = dirs::data_dir().unwrap().join("applications");
-        std::fs::create_dir_all(&applications).unwrap();
-        for id in [crate::DESKTOP_ID, "other-browser.desktop"] {
-            std::fs::write(
-                applications.join(id),
-                format!(
-                    "[Desktop Entry]\nType=Application\nName={id}\nExec=/bin/true %u\nMimeType=x-scheme-handler/http;x-scheme-handler/https;\n"
-                ),
-            )
-            .unwrap();
-        }
-        assert!(!is_default_handler());
-        set_default().unwrap();
-        assert!(is_default_handler());
-        let other = gio::AppInfo::all()
-            .into_iter()
-            .find(|app| app.id().is_some_and(|id| id == "other-browser.desktop"))
-            .unwrap();
-        other
-            .set_as_default_for_type("x-scheme-handler/https")
-            .unwrap();
-        assert!(!is_default_handler(), "both schemes must belong to Nara");
-        set_default().unwrap();
-        assert!(is_default_handler());
-    }
 }

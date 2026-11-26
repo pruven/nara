@@ -6,12 +6,6 @@ mod review;
 mod settings;
 mod update;
 
-#[cfg(target_os = "linux")]
-const DESKTOP_ID: &str = match option_env!("NARA_DESKTOP_ID") {
-    Some(id) => id,
-    None => "nara.desktop",
-};
-
 const BACKGROUND: u32 = 0x19191c;
 const SURFACE: u32 = 0x242428;
 const BORDER: u32 = 0x39393e;
