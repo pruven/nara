@@ -106,7 +106,8 @@ impl Update {
             .filter(|key| !key.is_empty())
             .ok_or("This build has no update signing key")?;
         let mut key = [0; 32];
-        hex::decode_to_slice(public_key, &mut key)?;
+        hex::decode_to_slice(public_key, &mut key)
+            .map_err(|_| "Invalid NARA_UPDATE_PUBLIC_KEY: expected 64 hexadecimal digits")?;
         let agent = metadata_agent();
         let checksums = agent
             .get(format!("{base}/SHA256SUMS"))

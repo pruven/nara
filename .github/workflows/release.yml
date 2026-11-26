@@ -170,7 +170,6 @@ jobs:
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
           test "$GITHUB_REF_NAME" = "v$version"
           cd packages
-          assets=(nara-linux-{x86_64,aarch64}.tar.gz
-            nara-windows-{x86_64,arm64}-setup.exe nara-windows-{x86_64,arm64}.zip)
+          mapfile -t assets < <(cut -d ' ' -f 3- SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" SHA256SUMS SHA256SUMS.sig \
             --verify-tag --title "Nara $GITHUB_REF_NAME" --generate-notes
