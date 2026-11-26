@@ -221,12 +221,27 @@ fn preference_path() -> io::Result<PathBuf> {
 }
 
 pub fn preferred() -> Option<Browser> {
+    read_preference(None)
+}
+
+pub fn preferred_from(browsers: &[Browser]) -> Option<Browser> {
+    read_preference(Some(browsers))
+}
+
+fn read_preference(
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] browsers: Option<&[Browser]>,
+) -> Option<Browser> {
     let stored = fs::read_to_string(preference_path().ok()?).ok()?;
     if let Some(executable) = stored.strip_prefix("path:") {
         return Some(Browser::Custom(PathBuf::from(executable)));
     }
     #[cfg(target_os = "linux")]
     if let Some(id) = stored.trim().strip_prefix("desktop:") {
+        if let Some(browser) = browsers.into_iter().flatten().find(
+            |browser| matches!(browser, Browser::Desktop { id: candidate, .. } if candidate == id),
+        ) {
+            return Some(browser.clone());
+        }
         return Some(Browser::Desktop {
             id: id.to_owned(),
             name: desktop_app(id)
@@ -237,11 +252,22 @@ pub fn preferred() -> Option<Browser> {
         .into_iter()
         .find(|browser| browser.label() == stored.trim())?;
     #[cfg(target_os = "linux")]
-    if let Some(browser) = available()
-        .into_iter()
-        .find(|browser| browser_name(browser.label()) == browser_name(legacy.label()))
     {
-        return Some(browser);
+        let discovered;
+        let browsers = match browsers {
+            Some(browsers) => browsers,
+            None => {
+                discovered = available();
+                &discovered
+            }
+        };
+        let legacy_name = browser_name(legacy.label());
+        if let Some(browser) = browsers
+            .iter()
+            .find(|browser| browser_name(browser.label()) == legacy_name)
+        {
+            return Some(browser.clone());
+        }
     }
     Some(legacy)
 }

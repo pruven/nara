@@ -19,9 +19,9 @@ Get the latest x64 and ARM64 packages and SHA-256 checksums from [GitHub Release
 ## Build and try it
 
 ```sh
-cargo build --locked
-cargo run --locked -- https://example.org
-cargo run --locked -- --settings
+cargo build --locked --release
+cargo run --locked --release -- https://example.org
+cargo run --locked --release -- --settings
 ```
 
 Linux builds use Wayland or X11 and require the corresponding native libraries
@@ -31,7 +31,7 @@ with Visual Studio C++ Build Tools and the Windows SDK.
 
 ## Open links automatically
 
-- **Linux** — Run `packaging/linux/install.sh target/debug/nara` as your regular
+- **Linux** — Run `packaging/linux/install.sh target/release/nara` as your regular
   user. Make sure `~/.local/bin` is on your desktop session's PATH.
 - **Windows** — Build with `cargo build --locked --release`, then compile
   `packaging/windows/nara.iss` with Inno Setup to register Nara for HTTP and HTTPS.
