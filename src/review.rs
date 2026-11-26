@@ -37,6 +37,7 @@ enum Status {
 struct Review {
     url: Option<Url>,
     original: Option<Url>,
+    popup: bool,
     status: Status,
     error: Option<String>,
     copied: bool,
@@ -293,7 +294,20 @@ impl Render for Review {
             }
             Status::Failed(error) => div().text_color(rgb(0xf1b6a7)).child(error.clone()),
         };
-        let mut buttons = div().flex().gap_2().items_center();
+        let mut buttons = div()
+            .flex()
+            .gap_2()
+            .items_center()
+            .when(self.popup, |buttons| {
+                buttons.child(Self::button(
+                    cx,
+                    "Close".to_owned(),
+                    false,
+                    |_, window, _| {
+                        window.remove_window();
+                    },
+                ))
+            });
         if self.url.is_some() {
             buttons = buttons.child(Self::button(
                 cx,
@@ -417,7 +431,7 @@ impl Render for Review {
             .on_action(cx.listener(|view, _: &UndoLinkChange, window, cx| view.undo(window, cx)))
             .on_action(cx.listener(|view, _: &Settings, window, cx| view.settings(window, cx)))
             .size_full()
-            .bg(rgb(BACKGROUND))
+            .when(!self.popup, |view| view.bg(rgb(BACKGROUND)))
             .text_color(rgb(FOREGROUND))
             .flex()
             .items_center()
@@ -447,40 +461,70 @@ pub fn run(input: Option<String>) {
         })
         .detach();
         let bounds = Bounds::centered(None, size(px(500.0), px(270.0)), cx);
-        let result = cx.open_window(
-            WindowOptions {
-                app_id: Some("nara".to_owned()),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Nara".into()),
+        let options = || WindowOptions {
+            app_id: Some("nara".to_owned()),
+            titlebar: Some(TitlebarOptions {
+                title: Some("Nara".into()),
+                ..Default::default()
+            }),
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_min_size: Some(size(px(410.0), px(270.0))),
+            ..Default::default()
+        };
+        #[cfg(target_os = "linux")]
+        if cx.compositor_name() == "Wayland" {
+            use gpui::{WindowBackgroundAppearance, WindowKind, layer_shell::LayerShellOptions};
+            let popup = WindowOptions {
+                kind: WindowKind::LayerShell(LayerShellOptions {
+                    namespace: "nara".to_owned(),
                     ..Default::default()
                 }),
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(410.0), px(270.0))),
-                ..Default::default()
-            },
-            |window, cx| {
-                cx.new(|cx| {
-                    let focus = cx.focus_handle();
-                    focus.focus(window, cx);
-                    let mut review = Review {
-                        url: None,
-                        original: None,
-                        status: Status::Ready,
-                        error: None,
-                        copied: false,
-                        request: 0,
-                        focus,
-                    };
-                    if let Some(input) = &input {
-                        review.set_link(input);
-                    }
-                    review
+                titlebar: None,
+                window_background: WindowBackgroundAppearance::Transparent,
+                ..options()
+            };
+            if cx
+                .open_window(popup, |window, cx| {
+                    review_view(window, cx, input.as_deref(), true)
                 })
-            },
-        );
+                .is_ok()
+            {
+                return;
+            }
+        }
+
+        let result = cx.open_window(options(), |window, cx| {
+            review_view(window, cx, input.as_deref(), false)
+        });
         if let Err(error) = result {
             eprintln!("Could not open Nara: {error}");
             cx.quit();
         }
     });
+}
+
+fn review_view(
+    window: &mut Window,
+    cx: &mut App,
+    input: Option<&str>,
+    popup: bool,
+) -> gpui::Entity<Review> {
+    cx.new(|cx| {
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
+        let mut review = Review {
+            url: None,
+            original: None,
+            popup,
+            status: Status::Ready,
+            error: None,
+            copied: false,
+            request: 0,
+            focus,
+        };
+        if let Some(input) = input {
+            review.set_link(input);
+        }
+        review
+    })
 }
