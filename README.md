@@ -40,13 +40,53 @@ Open **Nara Settings** and select a detected browser, or use **Choose another
 browser…** to select the browser executable yourself. Nara saves the choice
 and uses it whenever you click **Open in browser**.
 
-Use the default handler button to begin routing desktop links through Nara.
-On Windows, choose Nara for HTTP and HTTPS in Default Apps. To restore the
-previous behavior, choose your browser again in the system settings.
+Click **Set Nara as default link opener** in Settings to replace the current
+system handler for HTTP and HTTPS links. On Linux, Nara applies and verifies
+both associations and shows when it is the default link opener. On Windows,
+choose Nara for HTTP and HTTPS in the Default Apps window that opens. To restore
+the previous behavior, choose your browser again in the system settings.
 
 Links that a browser handles within its own tabs follow that browser's usual
 navigation flow. Nara receives links that applications send to the system
 handler.
+
+### Omarchy
+
+Omarchy's default-browser menu does not list Nara. After installing Nara,
+open **Nara Settings**, choose the browser that should open reviewed links,
+and click **Set Nara as default link opener**.
+
+To configure Nara manually, run:
+
+```sh
+desktop_id=nara.desktop
+# For the separately installed Nara (dev) build, use instead:
+# desktop_id=nara-dev.desktop
+
+# Set Nara as the default browser and HTTP/HTTPS link handler.
+env -u BROWSER XDG_CURRENT_DESKTOP= xdg-settings set default-web-browser "$desktop_id"
+xdg-mime default "$desktop_id" x-scheme-handler/http x-scheme-handler/https
+
+# Hyprland's desktop-specific associations can override the default handler.
+# Back up the file, then replace Omarchy's routing entry with Nara.
+if [ -f ~/.config/hyprland-mimeapps.list ]; then
+  cp -a ~/.config/hyprland-mimeapps.list \
+    ~/.config/hyprland-mimeapps.list.bak.$(date +%s)
+  sed -i "s/=omarchy-browser\\.desktop/=$desktop_id/g" \
+    ~/.config/hyprland-mimeapps.list
+fi
+
+# Both queries should print nara.desktop (or nara-dev.desktop).
+xdg-mime query default x-scheme-handler/http
+xdg-mime query default x-scheme-handler/https
+```
+
+If `~/.config/hyprland-mimeapps.list` already names another app directly,
+change its `x-scheme-handler/http` and `x-scheme-handler/https` entries under
+`[Default Applications]` to `nara.desktop` (or `nara-dev.desktop`).
+
+Test the setup with `xdg-open https://example.org`. Nara should show the link
+review window before opening the link in the browser selected in Nara Settings.
 
 ## Review a link
 
