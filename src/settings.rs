@@ -334,7 +334,7 @@ fn check_desktop_overrides(config: &std::path::Path) -> std::io::Result<()> {
             !name.is_empty()
                 && name
                     .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
         })
         .map(str::to_lowercase)
         .collect();
@@ -457,7 +457,7 @@ mod tests {
                 "",
                 "Hyprland",
                 "Valid-Name_2",
-                "bad.name",
+                "foo.bar",
                 "bad name",
                 "Ünicode",
             ] {
@@ -496,7 +496,7 @@ mod tests {
             let override_path = config.join(format!("{}-mimeapps.list", desktop.to_lowercase()));
             let original = "[Default Applications]\nx-scheme-handler/http=other-browser.desktop;\nx-scheme-handler/https=other-browser.desktop;\n";
             std::fs::write(&override_path, original).unwrap();
-            if matches!(desktop.as_str(), "Hyprland" | "Valid-Name_2") {
+            if matches!(desktop.as_str(), "Hyprland" | "Valid-Name_2" | "foo.bar") {
                 let error = set_default().unwrap_err().to_string();
                 assert!(error.contains(override_path.to_str().unwrap()), "{error}");
                 assert!(error.contains("No associations were changed"));

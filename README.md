@@ -72,7 +72,7 @@ xdg-mime default "$desktop_id" x-scheme-handler/http x-scheme-handler/https
 if [ -f ~/.config/hyprland-mimeapps.list ]; then
   backup=$(mktemp ~/.config/hyprland-mimeapps.list.bak.XXXXXX)
   cp -a ~/.config/hyprland-mimeapps.list "$backup"
-  sed -i "s/=omarchy-browser\\.desktop/=$desktop_id/g" \
+  sed -i -E "s#^(x-scheme-handler/https?=)omarchy-browser\\.desktop(;|$)#\\1$desktop_id\\2#" \
     ~/.config/hyprland-mimeapps.list
 fi
 
