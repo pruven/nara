@@ -4,6 +4,7 @@ mod browser;
 mod check;
 mod review;
 mod settings;
+mod update;
 
 const BACKGROUND: u32 = 0x19191c;
 const SURFACE: u32 = 0x242428;
