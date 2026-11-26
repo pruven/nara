@@ -330,7 +330,12 @@ fn check_desktop_overrides(config: &std::path::Path) -> std::io::Result<()> {
     let desktops: Vec<String> = std::env::var("XDG_CURRENT_DESKTOP")
         .unwrap_or_default()
         .split(':')
-        .filter(|name| !name.is_empty() && !name.contains(['/', '\\']))
+        .filter(|name| {
+            !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        })
         .map(str::to_lowercase)
         .collect();
     let mut directories = vec![config.to_owned()];
@@ -448,7 +453,14 @@ mod tests {
         // GIO caches desktop state. Run in a fresh process with isolated XDG folders
         // so this test never changes the user's actual default applications.
         if std::env::var_os("NARA_TEST_DEFAULT_HANDLER").is_none() {
-            for desktop in ["", "Hyprland"] {
+            for desktop in [
+                "",
+                "Hyprland",
+                "Valid-Name_2",
+                "bad.name",
+                "bad name",
+                "Ünicode",
+            ] {
                 let root = tempfile::tempdir().unwrap();
                 let status = std::process::Command::new(std::env::current_exe().unwrap())
                     .args(["--exact", "settings::tests::default_link_associations"])
@@ -479,16 +491,21 @@ mod tests {
         let config = dirs::config_dir().unwrap();
         std::fs::create_dir_all(&config).unwrap();
         let associations = config.join("mimeapps.list");
-        if std::env::var("XDG_CURRENT_DESKTOP").unwrap() == "Hyprland" {
-            let override_path = config.join("hyprland-mimeapps.list");
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap();
+        if !desktop.is_empty() {
+            let override_path = config.join(format!("{}-mimeapps.list", desktop.to_lowercase()));
             let original = "[Default Applications]\nx-scheme-handler/http=other-browser.desktop;\nx-scheme-handler/https=other-browser.desktop;\n";
             std::fs::write(&override_path, original).unwrap();
-            let error = set_default().unwrap_err().to_string();
-            assert!(error.contains("hyprland-mimeapps.list"), "{error}");
-            assert!(error.contains("No associations were changed"));
-            assert!(!associations.exists());
-            assert_eq!(std::fs::read_to_string(override_path).unwrap(), original);
-            return;
+            if matches!(desktop.as_str(), "Hyprland" | "Valid-Name_2") {
+                let error = set_default().unwrap_err().to_string();
+                assert!(error.contains(override_path.to_str().unwrap()), "{error}");
+                assert!(error.contains("No associations were changed"));
+                assert!(!associations.exists());
+                assert_eq!(std::fs::read_to_string(override_path).unwrap(), original);
+                return;
+            }
+            // Invalid desktop names must not let this file block setup.
+            check_desktop_overrides(&config).unwrap();
         }
         let app = gio::AppInfo::all()
             .into_iter()
