@@ -34,17 +34,17 @@ pub struct Update {
     size: u64,
 }
 
-fn agent(seconds: u64) -> ureq::Agent {
+fn metadata_agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .https_only(true)
-        .timeout_global(Some(Duration::from_secs(seconds)))
+        .timeout_global(Some(Duration::from_secs(15)))
         .build()
         .into()
 }
 
 pub fn check() -> Result<Option<Update>> {
     let release: Release = serde_json::from_str(
-        &agent(15)
+        &metadata_agent()
             .get(LATEST)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", concat!("Nara/", env!("CARGO_PKG_VERSION")))
@@ -89,8 +89,7 @@ pub fn check() -> Result<Option<Update>> {
 impl Update {
     pub fn download(&self, destination: &Path) -> Result<()> {
         let base = format!("{REPOSITORY}/releases/download/v{}", self.version);
-        let agent = agent(180);
-        let checksums = agent
+        let checksums = metadata_agent()
             .get(format!("{base}/SHA256SUMS"))
             .call()?
             .body_mut()
@@ -103,7 +102,17 @@ impl Update {
             .find_map(|(hash, filename)| (filename == self.filename).then_some(hash))
             .ok_or("The update package checksum is missing")?;
 
-        let mut response = agent
+        let timeout = Some(Duration::from_secs(30));
+        let package_agent: ureq::Agent = ureq::Agent::config_builder()
+            .https_only(true)
+            .timeout_resolve(timeout)
+            .timeout_connect(timeout)
+            .timeout_recv_response(timeout)
+            .timeout_per_read(timeout)
+            .timeout_per_write(timeout)
+            .build()
+            .into();
+        let mut response = package_agent
             .get(format!("{base}/{}", self.filename))
             .call()?
             .into_body()

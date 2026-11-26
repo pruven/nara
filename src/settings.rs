@@ -187,13 +187,15 @@ fn view(state: &Settings, _: &mut Cx<Settings>) -> El {
     if !state.updating {
         updates = updates.child(button("Check for updates", "check-update").on_press(
             |state: &mut Settings| {
-                state.update_in_background("Checking for updates…", || match update::check() {
+                let previous = state.update.clone();
+                state.update_in_background("Checking for updates…", move || match update::check()
+                {
                     Ok(Some(update)) => (
                         format!("Nara {} is available.", update.version),
                         Some(update),
                     ),
                     Ok(None) => ("You have the latest version.".to_owned(), None),
-                    Err(error) => (format!("Could not check for updates. {error}"), None),
+                    Err(error) => (format!("Could not check for updates. {error}"), previous),
                 });
             },
         ));
