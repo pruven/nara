@@ -300,19 +300,129 @@ fn set_default() -> std::io::Result<&'static str> {
         .ok_or_else(|| {
             std::io::Error::other(format!("Install {} first and retry.", crate::DESKTOP_ID))
         })?;
-    // Set both schemes explicitly: desktops can have different HTTP and HTTPS handlers.
-    for scheme in ["http", "https"] {
-        app.set_as_default_for_type(&format!("x-scheme-handler/{scheme}"))
-            .map_err(|error| {
-                std::io::Error::other(format!("Could not assign {scheme} links to Nara. {error}"))
-            })?;
-    }
-    if !is_default_handler() {
-        return Err(std::io::Error::other(
-            "The desktop did not apply both link associations. Check your system's default apps.",
-        ));
-    }
+    let config = dirs::config_dir()
+        .ok_or_else(|| std::io::Error::other("Could not find the configuration folder."))?;
+    check_desktop_overrides(&config)?;
+    with_association_rollback(&config.join("mimeapps.list"), || {
+        for scheme in ["http", "https"] {
+            app.set_as_default_for_type(&format!("x-scheme-handler/{scheme}"))
+                .map_err(|error| {
+                    std::io::Error::other(format!(
+                        "Could not assign {scheme} links to Nara. {error}"
+                    ))
+                })?;
+        }
+        if !is_default_handler() {
+            return Err(std::io::Error::other(
+                "The desktop did not apply both link associations. Check your system's default apps.",
+            ));
+        }
+        Ok(())
+    })?;
     Ok("Nara now opens HTTP and HTTPS links instead of your previous default browser.")
+}
+
+// Desktop-specific defaults take precedence over the generic file GIO writes.
+// Explain that override before changing either scheme, rather than leaving a
+// partially working setup or rewriting desktop-managed configuration silently.
+#[cfg(target_os = "linux")]
+fn check_desktop_overrides(config: &std::path::Path) -> std::io::Result<()> {
+    let desktops: Vec<String> = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|name| !name.is_empty() && !name.contains(['/', '\\']))
+        .map(str::to_lowercase)
+        .collect();
+    let mut directories = vec![config.to_owned()];
+    let system = std::env::var_os("XDG_CONFIG_DIRS")
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "/etc/xdg".into());
+    directories.extend(std::env::split_paths(&system).filter(|path| path.is_absolute()));
+    let apps = gio::AppInfo::all();
+    for scheme in ["http", "https"] {
+        'directories: for directory in &directories {
+            for desktop in desktops.iter().map(Some).chain(std::iter::once(None)) {
+                let filename = desktop.map_or_else(
+                    || "mimeapps.list".to_owned(),
+                    |name| format!("{name}-mimeapps.list"),
+                );
+                let path = directory.join(filename);
+                let file = gio::glib::KeyFile::new();
+                if file
+                    .load_from_file(&path, gio::glib::KeyFileFlags::NONE)
+                    .is_err()
+                {
+                    continue;
+                }
+                let Ok(ids) = file.string_list(
+                    "Default Applications",
+                    &format!("x-scheme-handler/{scheme}"),
+                ) else {
+                    continue;
+                };
+                let first = ids.iter().find(|id| {
+                    apps.iter().any(|app| {
+                        app.id()
+                            .is_some_and(|candidate| candidate.as_str() == id.as_str())
+                    })
+                });
+                if let Some(id) = first {
+                    if desktop.is_some() && id.as_str() != crate::DESKTOP_ID {
+                        return Err(std::io::Error::other(format!(
+                            "{} overrides {scheme} links with {}. Set its x-scheme-handler/{scheme} entry under [Default Applications] to {} and retry. No associations were changed.",
+                            path.display(),
+                            id,
+                            crate::DESKTOP_ID,
+                        )));
+                    }
+                    break 'directories;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn with_association_rollback(
+    path: &std::path::Path,
+    apply: impl FnOnce() -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    use std::{fs, io::Write};
+
+    // GIO writes both defaults and added associations to this user file. Keep
+    // the exact contents, including the absence of any previous default.
+    let previous = match fs::read(path) {
+        Ok(bytes) => Some((bytes, fs::metadata(path)?.permissions())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    if let Err(error) = apply() {
+        let restore = (|| -> std::io::Result<()> {
+            if let Some((bytes, permissions)) = previous {
+                let mut file = tempfile::NamedTempFile::new_in(
+                    path.parent().expect("association file has a parent"),
+                )?;
+                file.write_all(&bytes)?;
+                file.as_file().set_permissions(permissions)?;
+                file.persist(path)?;
+            } else {
+                match fs::remove_file(path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error),
+                }
+            }
+            Ok(())
+        })();
+        return match restore {
+            Ok(()) => Err(error),
+            Err(restore_error) => Err(std::io::Error::other(format!(
+                "{error} Could not restore previous associations: {restore_error}",
+            ))),
+        };
+    }
+    Ok(())
 }
 
 pub fn run() {
@@ -338,18 +448,20 @@ mod tests {
         // GIO caches desktop state. Run in a fresh process with isolated XDG folders
         // so this test never changes the user's actual default applications.
         if std::env::var_os("NARA_TEST_DEFAULT_HANDLER").is_none() {
-            let root = tempfile::tempdir().unwrap();
-            let status = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "settings::tests::default_link_associations"])
-                .env("NARA_TEST_DEFAULT_HANDLER", "1")
-                .env("XDG_CONFIG_HOME", root.path().join("config"))
-                .env("XDG_CONFIG_DIRS", root.path().join("config-dirs"))
-                .env("XDG_DATA_HOME", root.path().join("data"))
-                .env("XDG_DATA_DIRS", root.path().join("data-dirs"))
-                .env("XDG_CURRENT_DESKTOP", "")
-                .status()
-                .unwrap();
-            assert!(status.success());
+            for desktop in ["", "Hyprland"] {
+                let root = tempfile::tempdir().unwrap();
+                let status = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", "settings::tests::default_link_associations"])
+                    .env("NARA_TEST_DEFAULT_HANDLER", "1")
+                    .env("XDG_CONFIG_HOME", root.path().join("config"))
+                    .env("XDG_CONFIG_DIRS", root.path().join("config-dirs"))
+                    .env("XDG_DATA_HOME", root.path().join("data"))
+                    .env("XDG_DATA_DIRS", root.path().join("data-dirs"))
+                    .env("XDG_CURRENT_DESKTOP", desktop)
+                    .status()
+                    .unwrap();
+                assert!(status.success());
+            }
             return;
         }
 
@@ -364,6 +476,53 @@ mod tests {
             )
             .unwrap();
         }
+        let config = dirs::config_dir().unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        let associations = config.join("mimeapps.list");
+        if std::env::var("XDG_CURRENT_DESKTOP").unwrap() == "Hyprland" {
+            let override_path = config.join("hyprland-mimeapps.list");
+            let original = "[Default Applications]\nx-scheme-handler/http=other-browser.desktop;\nx-scheme-handler/https=other-browser.desktop;\n";
+            std::fs::write(&override_path, original).unwrap();
+            let error = set_default().unwrap_err().to_string();
+            assert!(error.contains("hyprland-mimeapps.list"), "{error}");
+            assert!(error.contains("No associations were changed"));
+            assert!(!associations.exists());
+            assert_eq!(std::fs::read_to_string(override_path).unwrap(), original);
+            return;
+        }
+        let app = gio::AppInfo::all()
+            .into_iter()
+            .find(|app| app.id().is_some_and(|id| id == crate::DESKTOP_ID))
+            .unwrap();
+        // Exercise a failure after HTTP succeeds, and one after both schemes
+        // succeed (the verification-failure path), with and without old defaults.
+        for original in [
+            None,
+            Some(
+                "[Default Applications]\nx-scheme-handler/http=other-browser.desktop;\nx-scheme-handler/https=other-browser.desktop;\ntext/html=other-browser.desktop;\n",
+            ),
+        ] {
+            for change_https in [false, true] {
+                if let Some(contents) = original {
+                    std::fs::write(&associations, contents).unwrap();
+                }
+                let result = with_association_rollback(&associations, || {
+                    app.set_as_default_for_type("x-scheme-handler/http")
+                        .unwrap();
+                    if change_https {
+                        app.set_as_default_for_type("x-scheme-handler/https")
+                            .unwrap();
+                    }
+                    Err(std::io::Error::other("injected association failure"))
+                });
+                assert!(result.unwrap_err().to_string().contains("injected"));
+                assert_eq!(
+                    std::fs::read_to_string(&associations).ok().as_deref(),
+                    original
+                );
+            }
+        }
+        std::fs::remove_file(&associations).unwrap();
         assert!(!is_default_handler());
         set_default().unwrap();
         assert!(is_default_handler());
