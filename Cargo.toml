@@ -29,6 +29,8 @@ gpui_platform = { package = "gpui-platform-gpui-unofficial", version = "=1.29.3"
 [profile.dev]
 debug = 0
 
-# GPUI validates and translates shaders before the first frame on Linux.
+# Optimizes shader preparation before the first frame on Linux. Cargo applies this
+# override on every target that builds naga, including Windows, trading longer
+# initial dev builds for faster shader preparation.
 [profile.dev.package.naga]
 opt-level = 2
