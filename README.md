@@ -50,6 +50,9 @@ handler.
 
 ## Review a link
 
+On Wayland desktops with layer-shell support, Nara opens as a compact,
+centered popup. Other desktops use a regular review window.
+
 Nara shows the host and URL before making any request.
 
 - **Check link** sends an HTTP HEAD request and displays the status and timing. It
