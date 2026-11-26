@@ -21,8 +21,6 @@ const MUTED: u32 = 0xb4b2ba;
 fn main() {
     let input = std::env::args().nth(1);
     match input.as_deref() {
-        #[cfg(target_os = "linux")]
-        Some("--desktop-id") => println!("{DESKTOP_ID}"),
         Some("--settings") => settings::run(),
         Some("--help") | Some("-h") => println!("Usage: nara [--settings | URL]"),
         _ => review::run(input),

@@ -54,8 +54,7 @@ handler.
 
 Omarchy's default-browser menu does not list Nara. After installing Nara,
 open **Nara Settings**, choose the browser that should open reviewed links,
-and click **Set Nara as default link opener**. If Settings reports a
-desktop-specific override, use the steps below to update it, then retry.
+and click **Set Nara as default link opener**.
 
 To configure Nara manually, run:
 
@@ -64,14 +63,15 @@ desktop_id=nara.desktop
 # For the separately installed Nara (dev) build, use instead:
 # desktop_id=nara-dev.desktop
 
-# Set only HTTP/HTTPS handlers; leave local HTML files in your browser.
+# Set Nara as the default browser and HTTP/HTTPS link handler.
+env -u BROWSER XDG_CURRENT_DESKTOP= xdg-settings set default-web-browser "$desktop_id"
 xdg-mime default "$desktop_id" x-scheme-handler/http x-scheme-handler/https
 
 # Hyprland's desktop-specific associations can override the default handler.
 # Back up the file, then replace Omarchy's routing entry with Nara.
 if [ -f ~/.config/hyprland-mimeapps.list ]; then
-  backup=$(mktemp ~/.config/hyprland-mimeapps.list.bak.XXXXXX)
-  cp -a ~/.config/hyprland-mimeapps.list "$backup"
+  cp -a ~/.config/hyprland-mimeapps.list \
+    ~/.config/hyprland-mimeapps.list.bak.$(date +%s)
   sed -i "s/=omarchy-browser\\.desktop/=$desktop_id/g" \
     ~/.config/hyprland-mimeapps.list
 fi
